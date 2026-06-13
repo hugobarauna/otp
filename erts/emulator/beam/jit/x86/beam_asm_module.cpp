@@ -529,9 +529,11 @@ void BeamModuleAssembler::emit_int_code_end() {
 
     emit_nyi("int_code_end");
 
-    for (auto pair : _dispatchTable) {
-        a.bind(pair.second);
-        a.jmp(imm(pair.first));
+    for (const auto &entry : _dispatchTable) {
+        if (entry.fragment != nullptr) {
+            a.bind(entry.label);
+            a.jmp(imm(entry.fragment));
+        }
     }
 }
 
@@ -574,13 +576,23 @@ void BeamModuleAssembler::emit_call_error_handler() {
 }
 
 const Label &BeamModuleAssembler::resolve_fragment(void (*fragment)()) {
-    auto it = _dispatchTable.find(fragment);
+    constexpr size_t mask = dispatchTableSize - 1;
+    size_t ix = ((UWord)fragment * UWORD_CONSTANT(0x9E3779B97F4A7C15))
+                >> (64 - 9 /* log2(dispatchTableSize) */);
 
-    if (it == _dispatchTable.end()) {
-        it = _dispatchTable.emplace(fragment, a.new_label()).first;
+    ASSERT(fragment != nullptr);
+
+    while (_dispatchTable[ix].fragment != fragment) {
+        if (_dispatchTable[ix].fragment == nullptr) {
+            _dispatchTable[ix].fragment = fragment;
+            _dispatchTable[ix].label = a.new_label();
+            break;
+        }
+
+        ix = (ix + 1) & mask;
     }
 
-    return it->second;
+    return _dispatchTable[ix].label;
 }
 
 void BeamModuleAssembler::flush_last_error() {

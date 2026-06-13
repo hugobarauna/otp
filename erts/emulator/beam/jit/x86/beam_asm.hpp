@@ -1245,7 +1245,17 @@ class BeamModuleAssembler : public BeamAssembler,
 
     /* Maps code pointers to thunks that jump to them, letting us treat global
      * fragments as if they were local. */
-    std::unordered_map<void (*)(), Label> _dispatchTable;
+    /* Open-addressed table mapping shared fragments to their veneer
+     * labels. resolve_fragment() is called for nearly every emitted BEAM
+     * instruction, which makes it too hot for std::unordered_map. The
+     * number of distinct fragments is small (bounded by the global
+     * fragment count), so a fixed power-of-two table is plenty. */
+    struct DispatchTableEntry {
+        void (*fragment)();
+        Label label;
+    };
+    static constexpr size_t dispatchTableSize = 512;
+    std::array<DispatchTableEntry, dispatchTableSize> _dispatchTable{};
 
 public:
     BeamModuleAssembler(BeamGlobalAssembler *ga,

@@ -34,7 +34,7 @@ extern "C"
 
 BeamGlobalAssembler::BeamGlobalAssembler(JitAllocator *allocator)
         : BeamAssembler("beam_asm_global") {
-    labels.reserve(emitPtrs.size());
+    ptrs.fill(nullptr);
 
     /* These labels are defined up-front so global functions can refer to each
      * other freely without any order dependencies. */

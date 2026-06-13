@@ -41,3 +41,25 @@ operand encodings would cut beamcodereader_read_next self time (~5%).
 Result: load min 458,231 (-1.4% vs 452,044 baseline = worse), prepare min
 370,628 (worse). GCC already optimizes this path well; extra code hurt
 layout. Decision: revert.
+
+### E2 — incremental staged-table sync (erl_code_staged.h) — KEPT
+Hypothesis: per-load O(export table) rescan in start_staging is wasted work;
+append-only tables allow tail-only membership sync + dirty-list address
+refresh. Result: load min 452,044 -> 432,072 (-4.4%), median 476,307 ->
+447,509 (-6.0%); prepare/finish unchanged as expected. verify hash OK,
+stress gauntlet (reload/purge/delete/trace/funs/on_load/atomic/concurrent)
+passes 3/3. New reference: load min 432,072. Commit on branch.
+
+### E3 — batched atom insertion (erts_atom_put_many) — REVERTED
+Hypothesis: verifying UTF-8 outside the lock + chunked single-write-lock
+inserts (skipping the read-locked probe) would recover part of the ~4%
+erts_atom_put cost. Result: A/B prepare min 363,447 (base) vs 366,405
+(patch), medians 381,087 vs 375,229 — a wash within noise; the per-atom
+rwlock+double-hash overhead is evidently not the dominant part of
+erts_atom_put (hash+memcmp+text copy dominate). Decision: revert.
+
+### E6 — pre-reserve asmjit text CodeBuffer (8x BEAM code size) — REVERTED
+Hypothesis: avoid grow+copy cycles during codegen (malloc 2.1%).
+Result: A/B prepare min 367,255 (base) vs 371,245 (patch) — slightly worse;
+asmjit's default growth policy is evidently not a bottleneck. Decision:
+revert.

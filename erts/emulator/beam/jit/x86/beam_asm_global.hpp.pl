@@ -180,12 +180,15 @@ class BeamGlobalAssembler : public BeamAssembler {
 
     enum GlobalLabels : uint32_t {
 $decl_enums
+        beam_global_labels_count
     };
 
     static const std::map<GlobalLabels, const std::string> labelNames;
     static const std::map<GlobalLabels, emitFptr> emitPtrs;
-    std::unordered_map<GlobalLabels, Label> labels;
-    std::unordered_map<GlobalLabels, fptr> ptrs;
+    /* Flat arrays indexed by GlobalLabels; get() is on the module load
+     * code-generation hot path, so plain array indexing matters here. */
+    std::array<Label, beam_global_labels_count> labels;
+    std::array<fptr, beam_global_labels_count> ptrs;
 
 $decl_emit_funcs
 
