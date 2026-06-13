@@ -89,3 +89,20 @@ Per-line-entry std::string heap copies removed (pointer into per-module
 file_names cache); lines vector reserved from func_tab bounds. A/B: load
 min -1.9%, median -6.3%. verify + stress OK. Reference: load min ~390k,
 median ~404k.
+
+### E11 — unrolled MD5 transformation — KEPT (small, certain)
+End-to-end ~-1% (at noise floor; below the usual 1.5% bar) but mechanism
+verified directly: erlang:md5 on 64MB 143ms -> 112ms (-22%), digests
+identical. Profile predicted ~1% and measurement agrees, so kept as a
+deterministic improvement.
+
+### Debug-build validation (E2 et al)
+Built TYPE=debug FLAVOR=jit emulator; registered the new staged dirty
+locks in erl_lock_check.c (own levels: after staging rwlocks, before
+alcu_allocator). verify + full stress gauntlet pass under the debug
+emulator — including the DEBUG-only full-scan staging assertions added in
+E2 and the lock-order checker.
+
+### Boot-time checkpoint
+bin/erl -noshell -eval halt(): master best 0.19s -> branch best 0.17s
+(~10% faster real-world VM boot).

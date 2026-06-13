@@ -24,6 +24,14 @@ interruptions by re-reading this file + LOG.md and continuing.
 
 `verify.escript` hash (must match after every patch): see LOG.md baseline entry.
 
+## Status (updated as the night went on)
+
+DONE — kept: E2 staging sync, E7 fragment lookups, E8 rawLabels vector,
+E9+E10 metadata registration, E11 MD5 unroll. Reverted: E1 reader fast
+path, E3 atom batch, E6 buffer reserve. See LOG.md + REPORT.md.
+Remaining below queue items E4(=done as E11)/E5 evaluated or skipped as
+sub-threshold; kernel code_SUITE validation in progress.
+
 ## Experiment queue (priority order; update as results come in)
 
 - [ ] E1 (pipeline validation, cheap): op reader fast path — inline/branch-hint
