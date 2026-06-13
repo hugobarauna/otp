@@ -17,10 +17,15 @@ Machine: 4-core x86_64 Linux, OTP 30 master, JIT (beamasm).
 
 ## Headline result
 
-- load (100 modules, sequential): **~452,000 µs → ~383,000 µs min
-  (≈ -15%)**; median ~476,000 → ~406,000 µs (≈ -15%)  *(final A/B below)*
-- VM boot time (`erl -noshell -eval halt()`, loads OTP boot modules):
-  **0.19 s → 0.17 s (≈ -10%)**
+Final back-to-back master-vs-branch run (idle machine, n=15 fresh VMs):
+
+| metric | master | branch | change |
+|---|---|---|---|
+| load min | 458,580 µs | 382,571 µs | **-16.6%** |
+| load median | 486,960 µs | 409,154 µs | **-16.0%** |
+| prepare min | 368,361 µs | 343,088 µs | -6.9% |
+| prepare median | 381,535 µs | 360,174 µs | -5.6% |
+| VM boot (best of 12) | 0.18 s | 0.16 s | ≈-11% |
 - `erlang:md5/1` throughput: +28% (143 ms → 112 ms / 64 MB), a side
   benefit of E11.
 
@@ -89,7 +94,7 @@ Machine: 4-core x86_64 Linux, OTP 30 master, JIT (beamasm).
 - Full stress + verify under the `TYPE=debug FLAVOR=jit` emulator: all VM
   assertions, the staging full-scan equivalence checks, and the lock-order
   checker pass.
-- kernel `code_SUITE`: see final section / LOG.md.
+- kernel `code_SUITE`: **56 ok, 0 failed**, 1 skipped of 57 (skip = `big_boot_embedded` "Needs crypto!", environmental).
 
 ## What dominates the remaining time (future work)
 

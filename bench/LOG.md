@@ -106,3 +106,16 @@ E2 and the lock-order checker.
 ### Boot-time checkpoint
 bin/erl -noshell -eval halt(): master best 0.19s -> branch best 0.17s
 (~10% faster real-world VM boot).
+
+## Final results (2026-06-12 night)
+
+Back-to-back master vs branch (idle machine, n=15):
+- load:    min 458,580 -> 382,571 us (-16.6%); median 486,960 -> 409,154 (-16.0%)
+- prepare: min 368,361 -> 343,088 us (-6.9%);  median 381,535 -> 360,174 (-5.6%)
+- VM boot: best 0.18s -> 0.16s (~-11%)
+
+Validation: verify hash identical throughout; stress gauntlet green on opt
+and TYPE=debug emulators (incl. E2's debug-only staging assertions and the
+lock checker); kernel code_SUITE 56 ok / 0 failed / 1 env-skip.
+
+Patch series: bench/patches/ (git format-patch master..code-loading-opt).
