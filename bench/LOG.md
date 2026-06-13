@@ -63,3 +63,10 @@ Hypothesis: avoid grow+copy cycles during codegen (malloc 2.1%).
 Result: A/B prepare min 367,255 (base) vs 371,245 (patch) — slightly worse;
 asmjit's default growth policy is evidently not a bottleneck. Decision:
 revert.
+
+### E7 — O(1) fragment lookups (flat GlobalLabels arrays + open-addressed
+### per-module dispatch table) — KEPT
+Hypothesis: two unordered_map lookups per emitted fragment call (ga get()
++ resolve_fragment) are hot enough to matter. Result: A/B load min 440,857
+-> 419,230 (-4.9%), median -4.1%; prepare min -2.0%. verify + stress OK.
+New reference: load min ~419,230 (A/B conditions). Commit on branch.
