@@ -155,62 +155,107 @@ void erts_md5(const uint8_t* msg, size_t msg_len, uint8_t* out)
 
 static void hash_part(const uint8_t* msg_part, erts_md5_state *state)
 {
-    static const struct {
-        uint32_t shift;
-        uint32_t k;
-    } sk[] =
-    {{ 7, 0xd76aa478}, {12, 0xe8c7b756}, {17, 0x242070db}, {22, 0xc1bdceee},
-     { 7, 0xf57c0faf}, {12, 0x4787c62a}, {17, 0xa8304613}, {22, 0xfd469501},
-     { 7, 0x698098d8}, {12, 0x8b44f7af}, {17, 0xffff5bb1}, {22, 0x895cd7be},
-     { 7, 0x6b901122}, {12, 0xfd987193}, {17, 0xa679438e}, {22, 0x49b40821},
-     { 5, 0xf61e2562}, { 9, 0xc040b340}, {14, 0x265e5a51}, {20, 0xe9b6c7aa},
-     { 5, 0xd62f105d}, { 9, 0x02441453}, {14, 0xd8a1e681}, {20, 0xe7d3fbc8},
-     { 5, 0x21e1cde6}, { 9, 0xc33707d6}, {14, 0xf4d50d87}, {20, 0x455a14ed},
-     { 5, 0xa9e3e905}, { 9, 0xfcefa3f8}, {14, 0x676f02d9}, {20, 0x8d2a4c8a},
-     { 4, 0xfffa3942}, {11, 0x8771f681}, {16, 0x6d9d6122}, {23, 0xfde5380c},
-     { 4, 0xa4beea44}, {11, 0x4bdecfa9}, {16, 0xf6bb4b60}, {23, 0xbebfbc70},
-     { 4, 0x289b7ec6}, {11, 0xeaa127fa}, {16, 0xd4ef3085}, {23, 0x04881d05},
-     { 4, 0xd9d4d039}, {11, 0xe6db99e5}, {16, 0x1fa27cf8}, {23, 0xc4ac5665},
-     { 6, 0xf4292244}, {10, 0x432aff97}, {15, 0xab9423a7}, {21, 0xfc93a039},
-     { 6, 0x655b59c3}, {10, 0x8f0ccc92}, {15, 0xffeff47d}, {21, 0x85845dd1},
-     { 6, 0x6fa87e4f}, {10, 0xfe2ce6e0}, {15, 0xa3014314}, {21, 0x4e0811a1},
-     { 6, 0xf7537e82}, {10, 0xbd3af235}, {15, 0x2ad7d2bb}, {21, 0xeb86d391}};
-
     uint32_t a = state->a;
     uint32_t b = state->b;
     uint32_t c = state->c;
     uint32_t d = state->d;
+    uint32_t x[16];
+    int i;
 
-    for (int i = 0; i < 64; i++) {
-        uint32_t f;
-        int g;
-        const uint8_t *word_ptr;
-
-        if (i <= 15) {
-            f = d ^ (b & (c ^ d));
-            g = i;
-        }
-        else if (i <= 31) {
-            f = c ^ (d & (b ^ c));
-            g = (5*i + 1) & 0xF;
-        }
-        else if (i <= 47) {
-            f = b ^ c ^ d;
-            g = (3*i + 5) & 0xF;
-        }
-        else {
-            f = c ^ (b | ~d);
-            g = (7*i) & 0xF;
-        }
-        word_ptr = msg_part + g*4;
-        f += (a + sk[i].k + get_little_int32(word_ptr));
-        f = (f << sk[i].shift) | (f >> (32 - sk[i].shift));
-
-        a = d;
-        d = c;
-        c = b;
-        b += f;
+    for (i = 0; i < 16; i++) {
+        x[i] = get_little_int32(msg_part + i*4);
     }
+
+    /* The fully unrolled transformation from RFC 1321; constant rotation
+     * amounts and round constants let the compiler emit immediate rotate
+     * instructions with no per-round branching, which is substantially
+     * faster than the rolled loop this replaces. */
+#define MD5_ROTL(v, s) (((v) << (s)) | ((v) >> (32 - (s))))
+#define MD5_F(b, c, d) ((d) ^ ((b) & ((c) ^ (d))))
+#define MD5_G(b, c, d) ((c) ^ ((d) & ((b) ^ (c))))
+#define MD5_H(b, c, d) ((b) ^ (c) ^ (d))
+#define MD5_I(b, c, d) ((c) ^ ((b) | ~(d)))
+#define MD5_STEP(fun, a, b, c, d, k, s, t)                                    \
+    do {                                                                      \
+        (a) += fun((b), (c), (d)) + x[k] + (uint32_t)(t);                     \
+        (a) = MD5_ROTL((a), (s));                                             \
+        (a) += (b);                                                           \
+    } while (0)
+
+    MD5_STEP(MD5_F, a, b, c, d,  0,  7, 0xd76aa478);
+    MD5_STEP(MD5_F, d, a, b, c,  1, 12, 0xe8c7b756);
+    MD5_STEP(MD5_F, c, d, a, b,  2, 17, 0x242070db);
+    MD5_STEP(MD5_F, b, c, d, a,  3, 22, 0xc1bdceee);
+    MD5_STEP(MD5_F, a, b, c, d,  4,  7, 0xf57c0faf);
+    MD5_STEP(MD5_F, d, a, b, c,  5, 12, 0x4787c62a);
+    MD5_STEP(MD5_F, c, d, a, b,  6, 17, 0xa8304613);
+    MD5_STEP(MD5_F, b, c, d, a,  7, 22, 0xfd469501);
+    MD5_STEP(MD5_F, a, b, c, d,  8,  7, 0x698098d8);
+    MD5_STEP(MD5_F, d, a, b, c,  9, 12, 0x8b44f7af);
+    MD5_STEP(MD5_F, c, d, a, b, 10, 17, 0xffff5bb1);
+    MD5_STEP(MD5_F, b, c, d, a, 11, 22, 0x895cd7be);
+    MD5_STEP(MD5_F, a, b, c, d, 12,  7, 0x6b901122);
+    MD5_STEP(MD5_F, d, a, b, c, 13, 12, 0xfd987193);
+    MD5_STEP(MD5_F, c, d, a, b, 14, 17, 0xa679438e);
+    MD5_STEP(MD5_F, b, c, d, a, 15, 22, 0x49b40821);
+
+    MD5_STEP(MD5_G, a, b, c, d,  1,  5, 0xf61e2562);
+    MD5_STEP(MD5_G, d, a, b, c,  6,  9, 0xc040b340);
+    MD5_STEP(MD5_G, c, d, a, b, 11, 14, 0x265e5a51);
+    MD5_STEP(MD5_G, b, c, d, a,  0, 20, 0xe9b6c7aa);
+    MD5_STEP(MD5_G, a, b, c, d,  5,  5, 0xd62f105d);
+    MD5_STEP(MD5_G, d, a, b, c, 10,  9, 0x02441453);
+    MD5_STEP(MD5_G, c, d, a, b, 15, 14, 0xd8a1e681);
+    MD5_STEP(MD5_G, b, c, d, a,  4, 20, 0xe7d3fbc8);
+    MD5_STEP(MD5_G, a, b, c, d,  9,  5, 0x21e1cde6);
+    MD5_STEP(MD5_G, d, a, b, c, 14,  9, 0xc33707d6);
+    MD5_STEP(MD5_G, c, d, a, b,  3, 14, 0xf4d50d87);
+    MD5_STEP(MD5_G, b, c, d, a,  8, 20, 0x455a14ed);
+    MD5_STEP(MD5_G, a, b, c, d, 13,  5, 0xa9e3e905);
+    MD5_STEP(MD5_G, d, a, b, c,  2,  9, 0xfcefa3f8);
+    MD5_STEP(MD5_G, c, d, a, b,  7, 14, 0x676f02d9);
+    MD5_STEP(MD5_G, b, c, d, a, 12, 20, 0x8d2a4c8a);
+
+    MD5_STEP(MD5_H, a, b, c, d,  5,  4, 0xfffa3942);
+    MD5_STEP(MD5_H, d, a, b, c,  8, 11, 0x8771f681);
+    MD5_STEP(MD5_H, c, d, a, b, 11, 16, 0x6d9d6122);
+    MD5_STEP(MD5_H, b, c, d, a, 14, 23, 0xfde5380c);
+    MD5_STEP(MD5_H, a, b, c, d,  1,  4, 0xa4beea44);
+    MD5_STEP(MD5_H, d, a, b, c,  4, 11, 0x4bdecfa9);
+    MD5_STEP(MD5_H, c, d, a, b,  7, 16, 0xf6bb4b60);
+    MD5_STEP(MD5_H, b, c, d, a, 10, 23, 0xbebfbc70);
+    MD5_STEP(MD5_H, a, b, c, d, 13,  4, 0x289b7ec6);
+    MD5_STEP(MD5_H, d, a, b, c,  0, 11, 0xeaa127fa);
+    MD5_STEP(MD5_H, c, d, a, b,  3, 16, 0xd4ef3085);
+    MD5_STEP(MD5_H, b, c, d, a,  6, 23, 0x04881d05);
+    MD5_STEP(MD5_H, a, b, c, d,  9,  4, 0xd9d4d039);
+    MD5_STEP(MD5_H, d, a, b, c, 12, 11, 0xe6db99e5);
+    MD5_STEP(MD5_H, c, d, a, b, 15, 16, 0x1fa27cf8);
+    MD5_STEP(MD5_H, b, c, d, a,  2, 23, 0xc4ac5665);
+
+    MD5_STEP(MD5_I, a, b, c, d,  0,  6, 0xf4292244);
+    MD5_STEP(MD5_I, d, a, b, c,  7, 10, 0x432aff97);
+    MD5_STEP(MD5_I, c, d, a, b, 14, 15, 0xab9423a7);
+    MD5_STEP(MD5_I, b, c, d, a,  5, 21, 0xfc93a039);
+    MD5_STEP(MD5_I, a, b, c, d, 12,  6, 0x655b59c3);
+    MD5_STEP(MD5_I, d, a, b, c,  3, 10, 0x8f0ccc92);
+    MD5_STEP(MD5_I, c, d, a, b, 10, 15, 0xffeff47d);
+    MD5_STEP(MD5_I, b, c, d, a,  1, 21, 0x85845dd1);
+    MD5_STEP(MD5_I, a, b, c, d,  8,  6, 0x6fa87e4f);
+    MD5_STEP(MD5_I, d, a, b, c, 15, 10, 0xfe2ce6e0);
+    MD5_STEP(MD5_I, c, d, a, b,  6, 15, 0xa3014314);
+    MD5_STEP(MD5_I, b, c, d, a, 13, 21, 0x4e0811a1);
+    MD5_STEP(MD5_I, a, b, c, d,  4,  6, 0xf7537e82);
+    MD5_STEP(MD5_I, d, a, b, c, 11, 10, 0xbd3af235);
+    MD5_STEP(MD5_I, c, d, a, b,  2, 15, 0x2ad7d2bb);
+    MD5_STEP(MD5_I, b, c, d, a,  9, 21, 0xeb86d391);
+
+#undef MD5_STEP
+#undef MD5_I
+#undef MD5_H
+#undef MD5_G
+#undef MD5_F
+#undef MD5_ROTL
 
     state->a += a;
     state->b += b;
