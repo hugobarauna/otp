@@ -83,3 +83,9 @@ printf-based %T name formatting per function, per-line-entry file name
 conversion, copied line vectors. Fixed all four (no behavior change; gdb
 symfile content identical). A/B: load min -2.7%, median -5.4%. verify +
 stress OK. Reference: load min ~398k, median ~416k.
+
+### E10 — LineData file names by pointer + lines reserve — KEPT
+Per-line-entry std::string heap copies removed (pointer into per-module
+file_names cache); lines vector reserved from func_tab bounds. A/B: load
+min -1.9%, median -6.3%. verify + stress OK. Reference: load min ~390k,
+median ~404k.
