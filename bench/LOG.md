@@ -34,3 +34,10 @@ idle schedulers, not loader work.)
 ## Experiments
 
 (one entry per experiment; keep = committed on branch `code-loading-opt`)
+
+### E1 — op reader 1/2-byte fast path in beamreader_read_tagged — REVERTED
+Hypothesis: single bounds check + likely-hints for the dominant 1-2 byte
+operand encodings would cut beamcodereader_read_next self time (~5%).
+Result: load min 458,231 (-1.4% vs 452,044 baseline = worse), prepare min
+370,628 (worse). GCC already optimizes this path well; extra code hurt
+layout. Decision: revert.

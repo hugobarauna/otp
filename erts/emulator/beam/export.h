@@ -133,6 +133,11 @@ ERTS_GLB_INLINE const Export *erts_active_export_entry(Eterm m,
                                                        unsigned a);
 Export* erts_export_put(Eterm mod, Eterm func, unsigned int arity);
 
+/* Must be called whenever an export entry's dispatch addresses are modified
+ * outside of export_start_staging, so the change propagates to the other
+ * code indices on subsequent stagings. */
+void erts_export_dirty(Export *ep);
+
 Export* erts_export_get_or_make_stub(Eterm, Eterm, unsigned);
 
 Export *export_list(int,ErtsCodeIndex);

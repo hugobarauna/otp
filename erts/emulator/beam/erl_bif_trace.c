@@ -2952,6 +2952,7 @@ install_exp_breakpoints(BpFunctions* f)
         ErtsCodeInfo *ci_rw = (ErtsCodeInfo*)fp[i].code_info;
         Export* ep = ErtsContainerStruct(ci_rw, Export, info);
         erts_activate_export_trampoline(ep, code_ix);
+        erts_export_dirty(ep);
 
 	erts_install_additional_session_bp(ci_rw);
     }
@@ -2976,6 +2977,7 @@ uninstall_exp_breakpoints(BpFunctions* f)
             ASSERT(BeamIsOpCode(ep->trampoline.common.op, op_i_generic_breakpoint));
             ep->dispatch.addresses[code_ix] =
                 (ErtsCodePtr)ep->trampoline.breakpoint.address;
+            erts_export_dirty(ep);
         }
     }
 }

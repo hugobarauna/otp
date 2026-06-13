@@ -188,6 +188,7 @@ static void record_module_delete_foreach(ErtsRecordEntry *obj, void *args_)
 
     if (obj->module == args->module) {
         obj->definitions[args->code_ix] = THE_NON_VALUE;
+        record_staged_mark_dirty(obj);
     }
 }
 
@@ -199,6 +200,11 @@ void erts_record_module_delete(Eterm module)
     ERTS_LC_ASSERT(erts_has_code_stage_permission());
 
     record_staged_foreach(record_module_delete_foreach, &args, staging_ix);
+}
+
+void erts_record_entry_dirty(ErtsRecordEntry *entry)
+{
+    record_staged_mark_dirty(entry);
 }
 
 void erts_record_start_staging(void)

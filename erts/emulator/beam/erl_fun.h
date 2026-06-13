@@ -117,6 +117,10 @@ const ErtsCodeMFA *erts_get_fun_mfa(const ErlFunEntry *fe, ErtsCodeIndex ix);
 
 void erts_set_fun_code(ErlFunEntry *fe, ErtsCodeIndex ix, ErtsCodePtr address);
 
+/* Must be called whenever a fun entry's dispatch addresses are modified
+ * outside of erts_fun_start_staging (erts_set_fun_code does this itself). */
+void erts_fun_entry_dirty(ErlFunEntry *fe);
+
 ERTS_GLB_INLINE
 ErtsCodePtr erts_get_fun_code(ErlFunEntry *fe, ErtsCodeIndex ix);
 

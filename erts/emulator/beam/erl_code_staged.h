@@ -93,6 +93,9 @@ typedef struct {
 typedef struct {
     ERTS_CODE_STAGED_OBJECT_TYPE object;
     ERTS_CODE_STAGED_ENTRY_T__ entryv[ERTS_NUM_CODE_IX];
+    /* Staging generation at which this object was last modified outside of
+     * start_staging (see mark_dirty below). */
+    UWord dirty_gen;
 } ERTS_CODE_STAGED_BLOB_T__;
 
 typedef struct {
@@ -111,6 +114,35 @@ static erts_rwmtx_t ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
 static erts_atomic_t ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
     (ERTS_CODE_STAGED_PREFIX, _total_entries_bytes);
 #endif
+
+/* Incremental staging state.
+ *
+ * Index tables are append-only (entries are never erased), and all
+ * insertions append to the table that is currently staging. Each of the
+ * ERTS_NUM_CODE_IX tables therefore always contains a (set-wise) prefix
+ * of the entries of the physical table that will be its source at its
+ * next start_staging. This lets start_staging sync table membership by
+ * walking only the entries appended to the source table since the
+ * destination table was last synced (recorded in _synced_count), rather
+ * than every entry.
+ *
+ * Per-entry staged state (e.g. dispatch addresses) of OLD entries only
+ * needs refreshing if it was modified after the destination table was
+ * last synced, which is at most 2 committed staging generations ago.
+ * All code that modifies staged state outside of start_staging must call
+ * mark_dirty on the object; start_staging then re-stages exactly the
+ * objects marked during the last two generations. */
+static erts_mtx_t ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+    (ERTS_CODE_STAGED_PREFIX, _dirty_mtx);
+static UWord ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+    (ERTS_CODE_STAGED_PREFIX, _generation);
+static struct {
+    ERTS_CODE_STAGED_BLOB_T__ **items;
+    int count;
+    int capacity;
+} ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__(ERTS_CODE_STAGED_PREFIX, _dirty_list);
+static int ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+    (ERTS_CODE_STAGED_PREFIX, _synced_count)[ERTS_NUM_CODE_IX];
 
 #ifdef DEBUG
 static int ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
@@ -157,6 +189,54 @@ ERTS_CODE_STAGED_FUNC__(read_unlock)(void)
     erts_rwmtx_t * const lock = &ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
                                  (ERTS_CODE_STAGED_PREFIX, _rwmutex);
     erts_rwmtx_runlock(lock);
+}
+
+/* Record that the staged state (e.g. dispatch addresses) of an object has
+ * been modified outside of start_staging, so that the modification is
+ * propagated to the other code indices during the next two staging
+ * generations. Must be called by ALL such modifiers; missing a call site
+ * results in stale staged state becoming active. */
+void ERTS_CODE_STAGED_FUNC__(mark_dirty)(ERTS_CODE_STAGED_OBJECT_TYPE *object);
+void ERTS_CODE_STAGED_FUNC__(mark_dirty)(ERTS_CODE_STAGED_OBJECT_TYPE *object)
+{
+    ERTS_CODE_STAGED_BLOB_T__ *blob =
+        ErtsContainerStruct(object, ERTS_CODE_STAGED_BLOB_T__, object);
+    erts_mtx_t * const mtx = &ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+                              (ERTS_CODE_STAGED_PREFIX, _dirty_mtx);
+    UWord gen;
+
+    erts_mtx_lock(mtx);
+
+    gen = ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+           (ERTS_CODE_STAGED_PREFIX, _generation);
+
+    if (blob->dirty_gen != gen) {
+        struct {
+            ERTS_CODE_STAGED_BLOB_T__ **items;
+            int count;
+            int capacity;
+        } *list = (void*)&ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+                          (ERTS_CODE_STAGED_PREFIX, _dirty_list);
+
+        blob->dirty_gen = gen;
+
+        if (list->count >= list->capacity) {
+            int new_capacity = list->capacity == 0 ? 64 : list->capacity * 2;
+            if (list->items == NULL) {
+                list->items = erts_alloc(ERTS_CODE_STAGED_TABLE_ALLOC_TYPE,
+                                         new_capacity * sizeof(*list->items));
+            } else {
+                list->items = erts_realloc(ERTS_CODE_STAGED_TABLE_ALLOC_TYPE,
+                                           list->items,
+                                           new_capacity * sizeof(*list->items));
+            }
+            list->capacity = new_capacity;
+        }
+
+        list->items[list->count++] = blob;
+    }
+
+    erts_mtx_unlock(mtx);
 }
 
 #ifdef ERTS_CODE_STAGED_WANT_INFO
@@ -294,6 +374,8 @@ ERTS_CODE_STAGED_FUNC__(alloc)(ERTS_CODE_STAGED_ENTRY_T__ *template)
             blob->entryv[ix].object = &blob->object;
         }
 
+        blob->dirty_gen = 0;
+
         return &blob->entryv[0];
     } else {
         /* Existing entry in another table, use free entry in blob */
@@ -363,6 +445,23 @@ ERTS_CODE_STAGED_FUNC__(init)(void)
     f.meta_free = (HMFREE_FUN)erts_free;
     f.meta_print = (HMPRINT_FUN)erts_print;
 
+    erts_mtx_init(&ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+                   (ERTS_CODE_STAGED_PREFIX, _dirty_mtx),
+                  ERTS_CODE_STAGED_PREFIX_STRING "_staged_dirty_lock",
+                  NIL,
+                  (ERTS_LOCK_FLAGS_PROPERTY_STATIC |
+                   ERTS_LOCK_FLAGS_CATEGORY_GENERIC));
+
+    /* Generation 0 is reserved as the "never marked" value of
+     * blob->dirty_gen. */
+    ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+     (ERTS_CODE_STAGED_PREFIX, _generation) = 1;
+
+    for (int ix = 0; ix < ERTS_NUM_CODE_IX; ix++) {
+        ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+         (ERTS_CODE_STAGED_PREFIX, _synced_count)[ix] = 0;
+    }
+
     for (int ix = 0; ix < ERTS_NUM_CODE_IX; ix++) {
         erts_index_init(ERTS_CODE_STAGED_TABLE_ALLOC_TYPE,
                         &tables[ix],
@@ -374,19 +473,23 @@ ERTS_CODE_STAGED_FUNC__(init)(void)
 }
 
 /*
- * Optimized start_staging.
+ * Incremental start_staging.
  *
- * Instead of unconditionally calling index_put_entry (hash operation) for
- * every entry in src, we check if the entry already exists in dst using
- * fast O(1) array lookups.
+ * Index tables are append-only and all insertions go to the staging
+ * table, so the destination table always contains a set-wise prefix of
+ * the source table's entry sequence (the source is, physically, the same
+ * table the destination was synced from ERTS_NUM_CODE_IX cycles ago,
+ * plus appended entries). Table membership is synced by appending only
+ * the source entries beyond the point recorded at this table's previous
+ * sync (_synced_count). index_put_entry is an idempotent upsert, which
+ * keeps this correct even for entries that reached the destination by
+ * other means (e.g. inserts made directly into it while it was last
+ * staging).
  *
- * Each blob has entryv[ERTS_NUM_CODE_IX] entries. To check if an object
- * exists in dst, we examine each entryv[] slot - if slot.index is valid
- * for dst and the entry at that index in dst points to the same object,
- * then it's already in dst.
- *
- * This replaces hash operations with up to ERTS_NUM_CODE_IX (typically 3)
- * array lookups per entry, which is significantly faster.
+ * Staged per-object state (e.g. dispatch addresses) of old entries is
+ * only refreshed for objects marked via mark_dirty during the last two
+ * generations; anything older is provably already in sync since this
+ * table's last two syncs copied it from the then-active table.
  */
 static void
 ERTS_CODE_STAGED_FUNC__(start_staging)(void)
@@ -397,7 +500,12 @@ ERTS_CODE_STAGED_FUNC__(start_staging)(void)
     const ErtsCodeIndex src_ix = erts_active_code_ix();
     IndexTable *dst = &tables[dst_ix];
     IndexTable *src = &tables[src_ix];
-    int dst_entries = dst->entries;
+    erts_mtx_t * const dirty_mtx = &ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+                                    (ERTS_CODE_STAGED_PREFIX, _dirty_mtx);
+    int * const synced_count = ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+                                (ERTS_CODE_STAGED_PREFIX, _synced_count);
+    UWord gen;
+    int ix;
 
     ASSERT(dst_ix != src_ix);
     ASSERT(ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
@@ -405,43 +513,63 @@ ERTS_CODE_STAGED_FUNC__(start_staging)(void)
 
     ERTS_CODE_STAGED_FUNC__(write_lock)();
 
-    for (int ix = 0; ix < src->entries; ix++) {
-        ERTS_CODE_STAGED_ENTRY_T__ *src_entry;
-        ERTS_CODE_STAGED_BLOB_T__ *blob;
-        int in_dst = 0;
+    /* Refresh the staged state of recently modified objects. Objects
+     * marked more than two generations ago are already in sync in all
+     * tables and are dropped from the list. */
+    erts_mtx_lock(dirty_mtx);
 
-        src_entry = (ERTS_CODE_STAGED_ENTRY_T__*)erts_index_lookup(src, ix);
-        blob = ERTS_CODE_STAGED_FUNC__(entry_to_blob)(src_entry);
+    gen = ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+           (ERTS_CODE_STAGED_PREFIX, _generation);
 
-        ERTS_CODE_STAGED_OBJECT_STAGE(src_entry->object, src_ix, dst_ix);
+    {
+        struct {
+            ERTS_CODE_STAGED_BLOB_T__ **items;
+            int count;
+            int capacity;
+        } *list = (void*)&ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+                          (ERTS_CODE_STAGED_PREFIX, _dirty_list);
+        int kept = 0;
 
-        /* Check if this entry exists in dst by examining blob's entryv[].
-         * If any entryv[] has a valid index within dst's current entries
-         * and that slot in dst points to the same object, then it's in dst. */
-        for (int j = 0; j < ERTS_NUM_CODE_IX && !in_dst; j++) {
-            int idx = blob->entryv[j].slot.index;
-            if (idx >= 0 && idx < dst_entries) {
-                ERTS_CODE_STAGED_ENTRY_T__ *check =
-                    (ERTS_CODE_STAGED_ENTRY_T__*)erts_index_lookup(dst, idx);
-                if (check->object == src_entry->object) {
-                    in_dst = 1;
-                }
+        for (ix = 0; ix < list->count; ix++) {
+            ERTS_CODE_STAGED_BLOB_T__ *blob = list->items[ix];
+
+            if (blob->dirty_gen + 2 >= gen) {
+                ERTS_CODE_STAGED_OBJECT_STAGE(&blob->object, src_ix, dst_ix);
+                list->items[kept++] = blob;
             }
         }
 
-        if (!in_dst) {
-            index_put_entry(dst, src_entry);
-        }
-#ifdef DEBUG
-        {
-            /* Verify index_put_entry agrees with our in_dst search result. */
-            ERTS_CODE_STAGED_ENTRY_T__* dst_entry =
-                (ERTS_CODE_STAGED_ENTRY_T__*)index_put_entry(dst, src_entry);
-            ASSERT(ERTS_CODE_STAGED_FUNC__(entry_to_blob)(src_entry)
-                    == ERTS_CODE_STAGED_FUNC__(entry_to_blob)(dst_entry));
-        }
-#endif
+        list->count = kept;
     }
+
+    erts_mtx_unlock(dirty_mtx);
+
+    /* Sync table membership: append the source entries added since this
+     * table was last synced. */
+    for (ix = synced_count[dst_ix]; ix < src->entries; ix++) {
+        ERTS_CODE_STAGED_ENTRY_T__ *src_entry;
+
+        src_entry = (ERTS_CODE_STAGED_ENTRY_T__*)erts_index_lookup(src, ix);
+
+        ERTS_CODE_STAGED_OBJECT_STAGE(src_entry->object, src_ix, dst_ix);
+
+        index_put_entry(dst, src_entry);
+    }
+
+    synced_count[dst_ix] = src->entries;
+
+#ifdef DEBUG
+    /* Verify the incremental sync against the full scan: every source
+     * entry must be present in the destination table. */
+    for (ix = 0; ix < src->entries; ix++) {
+        ERTS_CODE_STAGED_ENTRY_T__ *src_entry =
+            (ERTS_CODE_STAGED_ENTRY_T__*)erts_index_lookup(src, ix);
+        ERTS_CODE_STAGED_ENTRY_T__ *dst_entry =
+            (ERTS_CODE_STAGED_ENTRY_T__*)index_put_entry(dst, src_entry);
+        ASSERT(ERTS_CODE_STAGED_FUNC__(entry_to_blob)(src_entry)
+                == ERTS_CODE_STAGED_FUNC__(entry_to_blob)(dst_entry));
+    }
+#endif
 
     ERTS_CODE_STAGED_FUNC__(write_unlock)();
 
@@ -460,6 +588,19 @@ ERTS_CODE_STAGED_FUNC__(end_staging)(int commit)
     ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
      (ERTS_CODE_STAGED_PREFIX, _debug_stage_ix) = ~0;
 #endif
+
+    if (commit) {
+        erts_mtx_t * const dirty_mtx =
+            &ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+              (ERTS_CODE_STAGED_PREFIX, _dirty_mtx);
+
+        /* Objects modified from here on need to be propagated to the two
+         * tables staged after this commit. */
+        erts_mtx_lock(dirty_mtx);
+        ERTS_CODE_STAGED_CONCAT_MACRO_VALUES__
+         (ERTS_CODE_STAGED_PREFIX, _generation)++;
+        erts_mtx_unlock(dirty_mtx);
+    }
 }
 
 #ifdef ERTS_CODE_STAGED_WANT_GET

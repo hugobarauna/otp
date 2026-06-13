@@ -274,6 +274,11 @@ const Export *export_get(const Export *e)
     return export_staged_get(&template, erts_active_code_ix());
 }
 
+void erts_export_dirty(Export *ep)
+{
+    export_staged_mark_dirty(ep);
+}
+
 void export_start_staging(void)
 {
     export_staged_start_staging();

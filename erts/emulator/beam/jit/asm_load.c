@@ -1192,6 +1192,7 @@ void beam_load_finalize_code(LoaderState *stp,
             ep->trampoline.not_loaded.deferred = (BeamInstr)address;
         } else {
             ep->dispatch.addresses[staging_ix] = address;
+            erts_export_dirty(ep);
         }
     }
 
@@ -1253,6 +1254,7 @@ void beam_load_finalize_code(LoaderState *stp,
             entry = erts_record_put(stp->module, rec.records[i].name);
 
             entry->definitions[staging_ix] = def;
+            erts_record_entry_dirty(entry);
         }
 
         erts_free(ERTS_ALC_T_PREPARED_CODE, rec.records);

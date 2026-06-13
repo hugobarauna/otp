@@ -50,6 +50,7 @@ void erts_set_fun_code(ErlFunEntry *fe, ErtsCodeIndex ix, ErtsCodePtr address)
     /* Fun entries MUST NOT be updated during a purge! */
     ASSERT(fe->pend_purge_address == NULL);
     fe->dispatch.addresses[ix] = address;
+    erts_fun_entry_dirty(fe);
 }
  
 int erts_is_fun_loaded(const ErlFunEntry* fe, ErtsCodeIndex ix)
@@ -131,6 +132,11 @@ static void fun_stage(ErlFunEntry *entry,
 
 #include "erl_code_staged.h"
 
+void erts_fun_entry_dirty(ErlFunEntry *fe)
+{
+    fun_staged_mark_dirty(fe);
+}
+
 void erts_init_fun_table(void)
 {
     fun_staged_init();
@@ -173,6 +179,7 @@ static void fun_purge_foreach(ErlFunEntry *fe, void *args_)
         ERTS_THR_WRITE_MEMORY_BARRIER;
 
         fe->dispatch.addresses[args->code_ix] = beam_unloaded_fun;
+        fun_staged_mark_dirty(fe);
 
         erts_purge_state_add_fun(fe);
     }
@@ -199,6 +206,7 @@ void erts_fun_purge_abort_prepare(ErlFunEntry **funs, Uint no)
 
         ASSERT(fe->dispatch.addresses[code_ix] == beam_unloaded_fun);
         fe->dispatch.addresses[code_ix] = fe->pend_purge_address;
+        fun_staged_mark_dirty(fe);
     }
 }
 

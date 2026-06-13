@@ -289,6 +289,7 @@ erts_finish_loading(Binary* magic, Process* c_p,
                     ep->dispatch.addresses[code_ix] =
                         (ErtsCodePtr)ep->trampoline.breakpoint.address;
                     ep->trampoline.breakpoint.address = 0;
+                    erts_export_dirty(ep);
 
                     ASSERT(!erts_is_export_trampoline_active(ep, code_ix));
                 }

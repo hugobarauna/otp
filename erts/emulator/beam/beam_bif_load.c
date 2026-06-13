@@ -888,6 +888,7 @@ BIF_RETTYPE finish_after_on_load_2(BIF_ALIST_2)
                     ep->dispatch.addresses[code_ix] =
                         (void*)ep->trampoline.not_loaded.deferred;
                     ep->trampoline.not_loaded.deferred = 0;
+                    erts_export_dirty(ep);
             } else {
                 if (ep->bif_number != -1) {
                     continue;
@@ -895,6 +896,7 @@ BIF_RETTYPE finish_after_on_load_2(BIF_ALIST_2)
 
                 ep->trampoline.common.op = BeamOpCodeAddr(op_call_error_handler);
                 erts_activate_export_trampoline(ep, code_ix);
+                erts_export_dirty(ep);
             }
 	}
 
@@ -2439,6 +2441,7 @@ delete_code(Module* modp)
             ep->trampoline.not_loaded.deferred = 0;
 
             erts_activate_export_trampoline(ep, code_ix);
+            erts_export_dirty(ep);
 
 	    DBG_TRACE_MFA_P(&ep->info.mfa,
 			    "export invalidation, code_ix=%d", code_ix);

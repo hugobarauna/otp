@@ -113,6 +113,9 @@ Eterm erl_get_record_field(Process* p, Eterm src, Eterm id, Eterm field);
 bool erl_get_record_elements(Process* P, Eterm* reg, Eterm src,
                              Uint size, const Eterm* new_p);
 
+/* Must be called whenever a record entry's definitions are modified
+ * outside of erts_record_start_staging. */
+void erts_record_entry_dirty(ErtsRecordEntry *entry);
 void erts_record_start_staging(void);
 void erts_record_end_staging(int commit);
 
