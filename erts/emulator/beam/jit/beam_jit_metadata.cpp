@@ -164,7 +164,7 @@ static void *beamasm_insert_gdb_info(std::string module_name,
         symfile_size += sizeof(struct range_info) + range.name.size() + 1;
 
         for (const auto &line : range.lines) {
-            symfile_size += sizeof(struct line_info) + line.file.size() + 1;
+            symfile_size += sizeof(struct line_info) + line.file->size() + 1;
         }
     }
 
@@ -207,9 +207,9 @@ static void *beamasm_insert_gdb_info(std::string module_name,
             auto line_info = (struct line_info *)symfile;
             line_info->start_offset = (char *)line.start - (char *)base_address;
             line_info->line_number = (uint32_t)line.line;
-            line_info->file_length = (uint16_t)line.file.size() + 1;
+            line_info->file_length = (uint16_t)line.file->size() + 1;
             sys_memcpy(line_info->file,
-                       line.file.c_str(),
+                       line.file->c_str(),
                        line_info->file_length);
 
             symfile += sizeof(*line_info) + line_info->file_length;
@@ -417,7 +417,7 @@ public:
 
                 for (const auto &line : range.lines) {
                     debug_info.header.total_size += sizeof(debug_entry);
-                    debug_info.header.total_size += line.file.size() + 1;
+                    debug_info.header.total_size += line.file->size() + 1;
                 }
 
                 /* Add a dummy line to terminate the function. Otherwise, the
@@ -433,7 +433,7 @@ public:
                     debug_entry.column = 0;
 
                     fwrite(&debug_entry, sizeof(debug_entry), 1, file);
-                    fwrite(line.file.c_str(), line.file.size() + 1, 1, file);
+                    fwrite(line.file->c_str(), line.file->size() + 1, 1, file);
                 }
 
                 debug_entry.line_addr = (Uint64)range.stop;

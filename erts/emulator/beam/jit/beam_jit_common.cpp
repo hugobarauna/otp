@@ -464,6 +464,8 @@ void *BeamModuleAssembler::register_metadata(const BeamCodeHeader *header) {
             const void **line_cursor = line_table->func_tab[i];
             const int loc_size = line_table->loc_size;
 
+            lines.reserve(line_table->func_tab[i + 1] - line_cursor);
+
             /* Register all lines belonging to this function. */
             while ((intptr_t)line_cursor[0] < (intptr_t)stop) {
                 ptrdiff_t line_index;
@@ -484,7 +486,7 @@ void *BeamModuleAssembler::register_metadata(const BeamCodeHeader *header) {
                     ERTS_ASSERT(file < file_names.size());
 
                     lines.push_back({.start = line_cursor[0],
-                                     .file = file_names[file],
+                                     .file = &file_names[file],
                                      .line = LOC_LINE(loc)});
                 }
 

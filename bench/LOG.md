@@ -76,3 +76,10 @@ Dense label keys; per-label-operand hash lookups removed. prepare min
 357,670 -> 349,898 (-2.2%); load median -1.8% (ABAB rounds, min noisy).
 verify + stress OK. Reference now: load min ~404-425k (noisy), prepare
 min ~349,898.
+
+### E9 — cheap JIT metadata registration (register_metadata) — KEPT
+register_metadata was ~5.8% of load: under-reserved ranges vector,
+printf-based %T name formatting per function, per-line-entry file name
+conversion, copied line vectors. Fixed all four (no behavior change; gdb
+symfile content identical). A/B: load min -2.7%, median -5.4%. verify +
+stress OK. Reference: load min ~398k, median ~416k.

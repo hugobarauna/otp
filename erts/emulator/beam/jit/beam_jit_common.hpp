@@ -62,7 +62,9 @@ struct AsmRange {
 
     struct LineData {
         ErtsCodePtr start;
-        const std::string file;
+        /* Owned by the metadata producer (one entry per referenced file);
+         * registration is synchronous so the pointee outlives all uses. */
+        const std::string *file;
         unsigned line;
     };
 
