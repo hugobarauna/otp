@@ -70,3 +70,9 @@ Hypothesis: two unordered_map lookups per emitted fragment call (ga get()
 + resolve_fragment) are hot enough to matter. Result: A/B load min 440,857
 -> 419,230 (-4.9%), median -4.1%; prepare min -2.0%. verify + stress OK.
 New reference: load min ~419,230 (A/B conditions). Commit on branch.
+
+### E8 — rawLabels: unordered_map -> vector<Label> — KEPT
+Dense label keys; per-label-operand hash lookups removed. prepare min
+357,670 -> 349,898 (-2.2%); load median -1.8% (ABAB rounds, min noisy).
+verify + stress OK. Reference now: load min ~404-425k (noisy), prepare
+min ~349,898.

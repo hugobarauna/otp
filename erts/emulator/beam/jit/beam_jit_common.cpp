@@ -367,6 +367,14 @@ BeamModuleAssembler::BeamModuleAssembler(BeamGlobalAssembler *_ga,
     }
 }
 
+/* Appends the printable text of an atom, mirroring what erts_printf_term
+ * does for %T on atoms in the common case. This runs for every function of
+ * every loaded module, which is too hot for the printf machinery. */
+static void append_atom_text(std::string &out, Eterm term) {
+    const Atom *entry = atom_tab(atom_val(term));
+    out.append((const char *)erts_atom_get_name(entry), (size_t)entry->len);
+}
+
 void *BeamModuleAssembler::register_metadata(const BeamCodeHeader *header) {
 #ifndef WIN32
     const BeamCodeLineTab *line_table = header->line_table;
@@ -374,9 +382,37 @@ void *BeamModuleAssembler::register_metadata(const BeamCodeHeader *header) {
     char name_buffer[MAX_ATOM_SZ_LIMIT];
     std::string module_name = getAtom(mod);
     std::vector<AsmRange> ranges;
+    std::vector<std::string> file_names;
     ERTS_DECL_AM(erts_beamasm);
 
-    ranges.reserve(functions.size() + 2);
+    /* Two ranges per function (info+prologue, code), plus header/footer. */
+    ranges.reserve(2 * functions.size() + 2);
+
+    /* The file names referenced by the line table, converted up front:
+     * modules typically reference only a handful of files, while the line
+     * table itself can have thousands of entries. */
+    if (line_table && beam) {
+        Uint32 file_count = beam->lines.name_count;
+
+        file_names.reserve(file_count);
+
+        for (Uint32 i = 0; i < file_count; i++) {
+            Eterm fname = line_table->fname_ptr[i];
+            Sint n;
+
+            ERTS_ASSERT(is_nil(fname) || is_list(fname));
+
+            int res = erts_unicode_list_to_buf(fname,
+                                               (byte *)name_buffer,
+                                               sizeof(name_buffer),
+                                               sizeof(name_buffer) / 4,
+                                               &n);
+
+            ERTS_ASSERT(res != -1);
+
+            file_names.emplace_back(name_buffer, n);
+        }
+    }
 
     ASSERT((ErtsCodePtr)getBaseAddress() == (ErtsCodePtr)header);
     ASSERT(functions.size() == header->num_functions);
@@ -403,16 +439,15 @@ void *BeamModuleAssembler::register_metadata(const BeamCodeHeader *header) {
             stop = ((const char *)stop) + BEAM_ASM_FUNC_PROLOGUE_SIZE;
         }
 
-        n = erts_snprintf(name_buffer,
-                          1024,
-                          "%T:%T/%d",
-                          ci->mfa.module,
-                          ci->mfa.function,
-                          ci->mfa.arity);
-
         /* We use a different symbol for CodeInfo and the Prologue
          * in order for the perf disassembly to be better. */
-        std::string function_name(name_buffer, n);
+        std::string function_name;
+        function_name.reserve(2 * MAX_ATOM_CHARACTERS + 16);
+        append_atom_text(function_name, ci->mfa.module);
+        function_name += ':';
+        append_atom_text(function_name, ci->mfa.function);
+        function_name += '/';
+        function_name += std::to_string(ci->mfa.arity);
         ranges.push_back({.start = start,
                           .stop = stop,
                           .name = function_name + "-CodeInfoPrologue"});
@@ -444,25 +479,12 @@ void *BeamModuleAssembler::register_metadata(const BeamCodeHeader *header) {
                 }
 
                 if (loc != LINE_INVALID_LOCATION) {
-                    Uint32 file;
-                    Eterm fname;
-                    int res;
+                    Uint32 file = LOC_FILE(loc);
 
-                    file = LOC_FILE(loc);
-                    fname = line_table->fname_ptr[file];
-
-                    ERTS_ASSERT(is_nil(fname) || is_list(fname));
-
-                    res = erts_unicode_list_to_buf(fname,
-                                                   (byte *)name_buffer,
-                                                   sizeof(name_buffer),
-                                                   sizeof(name_buffer) / 4,
-                                                   &n);
-
-                    ERTS_ASSERT(res != -1);
+                    ERTS_ASSERT(file < file_names.size());
 
                     lines.push_back({.start = line_cursor[0],
-                                     .file = std::string(name_buffer, n),
+                                     .file = file_names[file],
                                      .line = LOC_LINE(loc)});
                 }
 
@@ -472,8 +494,8 @@ void *BeamModuleAssembler::register_metadata(const BeamCodeHeader *header) {
 
         ranges.push_back({.start = start,
                           .stop = stop,
-                          .name = function_name,
-                          .lines = lines});
+                          .name = std::move(function_name),
+                          .lines = std::move(lines)});
     }
 
     /* Push info about the footer */
