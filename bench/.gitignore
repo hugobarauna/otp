@@ -2,4 +2,6 @@ ebin/
 src/
 ebin_lean/
 src_lean/
+ebin_scale/
+src_scale/
 patches/
