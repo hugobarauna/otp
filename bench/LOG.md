@@ -119,3 +119,25 @@ and TYPE=debug emulators (incl. E2's debug-only staging assertions and the
 lock checker); kernel code_SUITE 56 ok / 0 failed / 1 env-skip.
 
 Patch series: bench/patches/ (git format-patch master..code-loading-opt).
+
+### E12 — drop asmjit kOptimizeForSize encoding option — REVERTED
+Hypothesis: size-optimization branches add per-instruction encode cost we
+don't need for a loader. Result: interleaved A/B prepare min — PATCH
+349,541/350,253 vs BASE 348,533/357,345 — identical at the min. The BEAM
+JIT's instruction mix rarely hits the size-opt branches, so _emit cost is
+fundamental encoding (InstDB lookup + ModRM/REX/imm writing), not config.
+Decision: revert. Implication: asmjit config tuning won't move _emit;
+need codegen-level or fixup-level changes.
+
+### E13 — transform-engine gate for label/aligned_label — REVERTED (correct but sub-noise)
+Instrumented the engine: label = 166,520 calls / 528 transforms (99.7% fail),
+aligned_label = 35,351 / 261 (99.3% fail) — they only transform when followed
+by a receive op (loop_rec/wait/wait_timeout/timeout). Added a provably-correct
+pre-filter (transform_may_match) with a DEBUG ASSERT cross-checking the engine
+agrees. verify hash identical, stress green. But A/B (load 4/4 weakly positive
+~1.6% min; prepare 3 ABAB rounds: patch min -2.9%/+0.2%/+2.9% vs base — a
+wash). Per-call overhead (~30 cyc × 200k = ~2ms) is below the ~3% run-to-run
+noise. Each saved call is cheaper than an average (productive) call, so cutting
+15% of calls cuts <1% of engine time. Decision: revert — not decidedly better.
+Note: func_info does NOT reach the engine (it's synthesized into int_func_start
+in beamcodereader_next before load_code), correcting the subagent's assumption.

@@ -1,3 +1,5 @@
 ebin/
 src/
+ebin_lean/
+src_lean/
 patches/
