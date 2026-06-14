@@ -17,7 +17,34 @@ Machine: 4-core x86_64 Linux, OTP 30 master, JIT (beamasm).
 
 ## Headline result
 
-Final back-to-back master-vs-branch run (idle machine, n=15 fresh VMs):
+The speedup is **not a fixed 16% — it grows with the number of modules
+loaded**, because the patches remove a *super-linear* per-module cost in the
+loader (see "Scaling" below). Loading 100 modules is ~16-18% faster; loading
+400 modules (≈ the size of OTP's own boot set, and small for a real
+Elixir/Phoenix app) is **~31% faster**.
+
+### Scaling (interleaved master-vs-branch, 2 rounds, min of 8 fresh VMs each)
+
+| modules loaded | master (µs) | branch (µs) | speedup | master µs/mod | branch µs/mod |
+|---|---|---|---|---|---|
+| 100 | 453,357 | 372,082 | **-17.9%** | 4,534 | 3,721 |
+| 200 | 991,570 | 764,880 | **-22.9%** | 4,958 | 3,824 |
+| 400 | 2,257,331 | 1,549,233 | **-31.4%** | 5,643 | 3,873 |
+
+Master's per-module cost grows +24% from 100→400 modules (super-linear total);
+the branch is essentially flat (+4%, i.e. linear total). Root cause confirmed
+by profiling master at N=400: `export_start_staging` — the loader rescanning
+the entire (growing) export table on *every* `finish_loading` — is **12% of
+load time at 400 modules** (vs ~3% at 100), the #2 cost after the asmjit
+encoder. Patch E2 makes that sync O(newly-added entries) instead of
+O(whole-table), removing the quadratic term. So the more modules a system
+loads, the larger the win. Reproduce with `bench/scaling.sh` +
+`bench/load_count.escript` against a 400-module set
+(`bench/gen_modules.escript 400 100 bench/src_scale`).
+
+### Fixed 100-module benchmark (the original metric)
+
+Back-to-back master-vs-branch (idle machine, n=15 fresh VMs):
 
 | metric | master | branch | change |
 |---|---|---|---|
@@ -26,6 +53,12 @@ Final back-to-back master-vs-branch run (idle machine, n=15 fresh VMs):
 | prepare min | 368,361 µs | 343,088 µs | -6.9% |
 | prepare median | 381,535 µs | 360,174 µs | -5.6% |
 | VM boot (best of 12) | 0.18 s | 0.16 s | ≈-11% |
+
+A second, codegen-heavy "lean" workload (many functions, few unique
+atoms/literals; `bench/gen_lean.escript`) loads ~13-17% faster on the branch
+at 100 modules — confirming the gains are robust to workload shape, not an
+artifact of the atom-heavy fixture.
+
 - `erlang:md5/1` throughput: +28% (143 ms → 112 ms / 64 MB), a side
   benefit of E11.
 

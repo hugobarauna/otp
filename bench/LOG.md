@@ -141,3 +141,26 @@ noise. Each saved call is cheaper than an average (productive) call, so cutting
 15% of calls cuts <1% of engine time. Decision: revert — not decidedly better.
 Note: func_info does NOT reach the engine (it's synthesized into int_func_start
 in beamcodereader_next before load_code), correcting the subagent's assumption.
+
+## Scaling result (the real headline) — 2026-06-14
+
+The speedup grows with module count because E2 removes a super-linear
+per-module staging cost. Interleaved master-vs-branch, 2 rounds, min of 8:
+
+| modules | master µs | branch µs | speedup |
+|---|---|---|---|
+| 100 | 453,357 | 372,082 | -17.9% |
+| 200 | 991,570 | 764,880 | -22.9% |
+| 400 | 2,257,331 | 1,549,233 | -31.4% |
+
+Master per-module: 4534 -> 4958 -> 5643 µs (super-linear). Branch: 3721 ->
+3824 -> 3873 µs (flat/linear). Confirmed by profiling master @ N=400:
+export_start_staging = 12.08% of load (vs ~3% @ N=100), #2 after asmjit
+_emit (14%). E2 makes that O(new) not O(table) -> the win scales with N.
+
+Lean codegen-heavy workload @100 modules: -13..17% (interleaved), robust
+to workload shape. The earlier 27% one-off was cross-time/cron noise.
+
+This session also tried E12 (kOptimizeForSize, reverted) and E13
+(transform gate, correct but sub-noise, reverted). Net new finding: the
+existing 6 patches already deliver far more than 16% at realistic scale.
